@@ -1,9 +1,9 @@
-import requests
-import yaml
 import os
 import secrets
 import shutil
 import urllib.request
+
+import yaml
 
 
 def main():
