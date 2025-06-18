@@ -34,8 +34,9 @@ def main():
         upd("judge_server","JUDGE_TOKEN", judge_token)
         upd("judge_backend","JUDGE_TOKEN", judge_token)
         db_password = secrets.token_urlsafe(21)
-        upd("judge_postgres","POSTGRES_PASSWORD", db_password)
-        upd("judge_backend","POSTGRES_PASSWORD", db_password)
+        upd("judge_mariadb","MYSQL_PASSWORD", db_password)
+        upd("judge_mariadb","MYSQL_ROOT_PASSWORD", secrets.token_urlsafe(21))
+        upd("judge_backend","MYSQL_PASSWORD", db_password)
         flask_secret_key = secrets.token_urlsafe(21)
         upd("judge_backend","FLASK_SECRET_KEY", flask_secret_key)
         with open("docker-compose.yml", "w", encoding="utf8") as f:
