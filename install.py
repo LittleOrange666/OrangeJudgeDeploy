@@ -1,10 +1,90 @@
 import os
+import random
+import re
 import secrets
 import shutil
+import string
+import subprocess
 import urllib.request
+import uuid
+import webbrowser
 
 import yaml
-from scipy.signal import wiener
+import copy
+
+cloudflared_template = {
+    "image": "cloudflare/cloudflared:latest",
+    "restart": "unless-stopped",
+    "command": "tunnel --url http://judge_backend:8080 --no-autoupdate run",
+    "environment": [
+        "TUNNEL_TOKEN="
+    ],
+    "depends_on": {
+        "judge_backend": {
+            "condition": "service_healthy"
+        }
+    }
+}
+
+cloudflared_cmd = ["docker", "run", "--rm", "-v", os.path.join(os.getcwd(), ".cloudflared")+":/home/nonroot/.cloudflared",
+                   "cloudflare/cloudflared:latest"]
+
+
+def get_tunnel_token() -> str:
+    print("Try login to cloudflare...")
+    proc = subprocess.Popen(cloudflared_cmd + ["login"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    login_url = None
+    skip_login = False
+    for line in proc.stdout:
+        print(line.strip())
+        if "existing certificate" in line:
+            print("You have already logged in, skipping login")
+            skip_login = True
+            break
+        match = re.search(r"(https://.+cloudflare.com.+)", line)
+        if match:
+            login_url = match.group(1)
+            break
+    if not skip_login:
+        print("URL:", login_url)
+        webbrowser.open(login_url)
+        proc.wait()
+        if proc.returncode != 0:
+            print("Failed to login to cloudflare")
+            return ""
+    print("Login successful, getting tunnel token...")
+    tunnel_name = "".join(random.choices(string.ascii_lowercase, k=10))
+    tunnel_id = ""
+    proc1 = subprocess.Popen(cloudflared_cmd + ["tunnel", "create", tunnel_name], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+    for line in proc1.stdout:
+        print(line.strip())
+        match = re.search(r"Created tunnel \w+ with id ([\w-]+)", line)
+        if match:
+            tunnel_id = match.group(1)
+            break
+    if not tunnel_id:
+        print("Failed to get tunnel ID")
+        return ""
+    print("Tunnel ID:", repr(tunnel_id))
+    dns_name = input("Enter the DNS name for the tunnel (e.g., example.com): ")
+    if not dns_name:
+        print("DNS name cannot be empty")
+        return ""
+    subprocess.run(cloudflared_cmd + ["tunnel", "route", "dns", tunnel_id, dns_name])
+    proc2 = subprocess.Popen(cloudflared_cmd + ["tunnel", "token", tunnel_name], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+    token = ""
+    for line in proc2.stdout:
+        print(line.strip())
+        if " " not in line.strip():
+            token = line.strip()
+            break
+    if not token:
+        print("Failed to get tunnel token")
+        return ""
+    print("Tunnel token:", repr(token))
+    return token
 
 
 def security_tools():
@@ -13,6 +93,7 @@ def security_tools():
         print("1. Go back")
         print("2. Remove exposed ports")
         print("3. Add cloudflare proxy (need tunnel token)")
+        print("4. Add cloudflare proxy (auto create)")
         choice = input("Enter your choice: ")
         with open("docker-compose.yml", encoding="utf8") as f:
             info = yaml.load(f, Loader=yaml.FullLoader)
@@ -28,19 +109,17 @@ def security_tools():
             print("Removed exposed ports from all services except judge_backend")
         elif choice == "3":
             token = input("Enter your cloudflare tunnel token: ")
-            template = {
-                "image": "cloudflare/cloudflared:latest",
-                "restart": "unless-stopped",
-                "command": "tunnel --url http://judge_backend:8080 --no-autoupdate run",
-                "environment": [
-                    f"TUNNEL_TOKEN={token}"
-                ],
-                "depends_on": {
-                    "judge_backend": {
-                        "condition": "service_healthy"
-                    }
-                }
-            }
+            template = copy.deepcopy(cloudflared_template)
+            template["environment"][0] = f"TUNNEL_TOKEN={token}"
+            info["services"]["cloudflare"] = template
+            print("Added cloudflare proxy service to docker-compose.yml")
+        elif choice == "4":
+            token = get_tunnel_token()
+            if not token:
+                print("Failed to get tunnel token, please try again")
+                continue
+            template = copy.deepcopy(cloudflared_template)
+            template["environment"][0] = f"TUNNEL_TOKEN={token}"
             info["services"]["cloudflare"] = template
             print("Added cloudflare proxy service to docker-compose.yml")
         else:
