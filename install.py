@@ -1,3 +1,4 @@
+import copy
 import os
 import random
 import re
@@ -6,11 +7,9 @@ import shutil
 import string
 import subprocess
 import urllib.request
-import uuid
 import webbrowser
 
 import yaml
-import copy
 
 cloudflared_template = {
     "image": "cloudflare/cloudflared:latest",
@@ -112,6 +111,8 @@ def security_tools():
             template = copy.deepcopy(cloudflared_template)
             template["environment"][0] = f"TUNNEL_TOKEN={token}"
             info["services"]["cloudflare"] = template
+            if "ports" in info["services"]["judge_backend"]:
+                del info["services"]["judge_backend"]["ports"]
             print("Added cloudflare proxy service to docker-compose.yml")
         elif choice == "4":
             token = get_tunnel_token()
@@ -121,6 +122,8 @@ def security_tools():
             template = copy.deepcopy(cloudflared_template)
             template["environment"][0] = f"TUNNEL_TOKEN={token}"
             info["services"]["cloudflare"] = template
+            if "ports" in info["services"]["judge_backend"]:
+                del info["services"]["judge_backend"]["ports"]
             print("Added cloudflare proxy service to docker-compose.yml")
         else:
             print("Invalid choice, please try again")
